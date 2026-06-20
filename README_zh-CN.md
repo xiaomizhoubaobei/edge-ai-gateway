@@ -2,9 +2,11 @@
 
 提供简洁流畅的聊天体验，并演示 Edge Functions 转发与 SSE 流式返回。
 
+[English](./README.md) | 简体中文
+
 ## 项目说明
 
-本项目用于演示**如何在 Edge Functions 中转发 AI 模型请求**并通过 SSE 流式返回结果。核心逻辑在 `functions/v1/chat/completions/index.ts`，主要流程包括：
+本项目用于演示**如何在 Edge Functions 中转发 AI 模型请求**并通过 SSE 流式返回结果。核心逻辑在 `edge-functions/v1/chat/completions/index.ts`，主要流程包括：
 
 - 校验 `messages` 请求体
 - 将请求转发到 `${BASE_URL}/chat/completions`，并携带 `MODEL`
@@ -22,6 +24,8 @@
 ## 部署
 
 [![使用 EdgeOne Pages 部署](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://pages.edgeone.ai/templates)
+
+更多模板：[EdgeOne Pages](https://pages.edgeone.ai/templates)
 
 ## 入门
 

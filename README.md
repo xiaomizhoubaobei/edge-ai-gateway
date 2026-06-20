@@ -2,6 +2,8 @@
 
 A clean, streamlined chat interface that demonstrates Edge Function forwarding and SSE streaming.
 
+English | [简体中文](./README_zh-CN.md)
+
 ## What this project demonstrates
 
 This project shows **how to forward AI model requests through Edge Functions** and return responses via server-sent events. The core logic lives in `functions/v1/chat/completions/index.ts`, which:
