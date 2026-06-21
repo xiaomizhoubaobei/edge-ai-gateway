@@ -100,7 +100,15 @@ Try asking me something like:
       });
 
       if (!res.ok) {
-        throw new Error(res.statusText);
+        // 尝试解析 JSON 错误响应（OpenAI 兼容格式）
+        let errorMsg = res.statusText;
+        try {
+          const errData = await res.json();
+          errorMsg = errData.error?.message || errorMsg;
+        } catch {
+          // 非 JSON 响应，使用 statusText
+        }
+        throw new Error(errorMsg);
       }
 
       await processStreamResponse(res, (token: string) => {

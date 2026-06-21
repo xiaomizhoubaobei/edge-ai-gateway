@@ -4,7 +4,11 @@ const ERRORS = {
   ENV_CONFIG_MISSING:
     'Environment configuration is missing. Please set up the necessary environment variables in your EdgeOne Pages project settings.',
   LLM_FAILED: 'An error occurred while calling the BASE_URL.',
+  TIMEOUT: 'Upstream LLM request timed out. Please try again later.',
 };
+
+/** 上游请求超时时间（毫秒），留 5 秒缓冲给平台 30 秒限制 */
+const UPSTREAM_TIMEOUT_MS = 25_000;
 
 interface GeoData {
   asn: number;
@@ -42,6 +46,26 @@ interface UserInfo {
     longitude: number;
     isp: string;
   };
+}
+
+/** 返回 OpenAI 兼容的 JSON 错误响应 */
+function errorResponse(message: string, status = 500): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message,
+        type: 'server_error',
+        code: status === 504 ? 'timeout' : 'internal_error',
+      },
+    }),
+    {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    }
+  );
 }
 
 function extractUserInfo(request: EORequest): UserInfo | null {
@@ -84,13 +108,7 @@ export async function onRequest({ request, env }: any) {
   const { BASE_URL, API_KEY, MODEL } = env;
 
   if (!BASE_URL || !API_KEY || !MODEL) {
-    return new Response(ERRORS.ENV_CONFIG_MISSING, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return errorResponse(ERRORS.ENV_CONFIG_MISSING);
   }
 
   const json = await request.clone().json();
@@ -107,13 +125,7 @@ export async function onRequest({ request, env }: any) {
     .safeParse(json);
 
   if (!result.success) {
-    return new Response(result.error.message, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return errorResponse(result.error.message, 400);
   }
 
   const { messages } = result.data;
@@ -122,18 +134,28 @@ export async function onRequest({ request, env }: any) {
   const userInfo = extractUserInfo(request as EORequest);
 
   try {
-    const response = await fetch(`${BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        stream: true,
-      }),
-    });
+    // 使用 AbortController 实现超时控制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(`${BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // 创建 TransformStream 来注入用户信息
     const { readable, writable } = new TransformStream();
@@ -178,12 +200,12 @@ export async function onRequest({ request, env }: any) {
     });
   } catch (error: any) {
     console.error('LLM error: ', error.message);
-    return new Response(ERRORS.LLM_FAILED, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+
+    // 区分超时和其他错误
+    if (error.name === 'AbortError') {
+      return errorResponse(ERRORS.TIMEOUT, 504);
+    }
+
+    return errorResponse(ERRORS.LLM_FAILED, 502);
   }
 }
